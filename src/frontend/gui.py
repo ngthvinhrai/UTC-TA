@@ -14,6 +14,8 @@ class Interface:
         
         if "messages" not in st.session_state:
             st.session_state.messages = []
+        if "selected_model" not in st.session_state:
+            st.session_state.selected_model = "Open AI"
 
         self.initialize()
 
@@ -68,6 +70,16 @@ class Interface:
                 else: 
                     st.error("Chưa có tài liệu")
 
+            # --- THÊM TÍNH NĂNG CHỌN MODEL Ở ĐÂY ---
+            st.container(height=440, border=False)
+            model_options = ["Open AI", "Gemma"]            
+            selected_model = st.selectbox(
+                "",
+                options=model_options,
+                index=model_options.index(st.session_state.selected_model)
+            )
+
+
         st.markdown("### 🧮 UTC Teaching Assistant")
 
         chat_history: list[dict[str, str]] = []
@@ -76,7 +88,7 @@ class Interface:
         for message in st.session_state.messages:
             st.markdown(self.get_message_html(message["role"], message["content"]), unsafe_allow_html=True)
 
-        llm = get_assistant("Gemma")
+        llm = get_assistant(selected_model)
         
         # Xử lý Input
         if query := st.chat_input("Bạn muốn hỏi gì..."):
