@@ -2,31 +2,18 @@ import streamlit as st
 from dotenv import load_dotenv
 import os
 from abc import ABC, abstractmethod
+from src.backend.agents.prompt import SYSTEM_PROMPT, ROUTER_PROMPT
 from typing import Any
 load_dotenv()
-
-SYSTEM_PROMPT = """
-<role>
-Bạn là chuyên gia về toán và biết tất cả những gì liên qua đến lĩnh vực toán.
-</role>
-
-<task>
-Công việc của bạn là sẽ phản hồi những câu hỏi của người dùng. Nếu câu hỏi liên quan đến toán, hãy chỉ đưa ra hướng dẫn, gợi ý để làm bài. Nếu câu hỏi không liên quán đến toán, hãy trả lời một cách thân thiện.
-Bạn sẽ được cung cấp một đoạn tài liệu để trả lời không bị nhầm. Dưới đây là tại liệu đấy:
-{CONTEXT}
-</task>
-
-<constrain>
-</constrain>
-"""
 
 class BaseAssistant(ABC):
     @abstractmethod
     def get_response(self, chat_history: list[dict[str, str]]) -> str:
         """"""
 
-    def get_context(self, context: list[dict[str, Any]]) -> str:
-        return "\n".join([c["content"] for c in context])
+    @abstractmethod
+    def get_router_response(self, query: str) -> str:
+        """"""
 
 class OpenAIAssistant(BaseAssistant):
     def __init__(self, model: str, api_key: str):
@@ -36,9 +23,8 @@ class OpenAIAssistant(BaseAssistant):
             api_key=api_key
         )
 
-    def get_response(self, chat_history: list[dict[str, str]], context: list[dict[str, Any]]) -> str:
-        context_content = self.get_context(context)
-        messages = [{"role": "system", "content": SYSTEM_PROMPT.format(CONTEXT=context_content)}, *chat_history]
+    def get_response(self, chat_history: list[dict[str, str]], context: str) -> str:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT.format(CONTEXT=context)}, *chat_history]
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -46,7 +32,19 @@ class OpenAIAssistant(BaseAssistant):
         )
 
         return response.choices[0].message.content
+    
+    def get_router_response(self, query: str) -> str:
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": ROUTER_PROMPT},
+                {"role": "user", "content": query}
+            ]
+        )
         
+        return response.choices[0].message.content
+    
 class GemmaAssistant(BaseAssistant):
     def __init__(self, model: str, api_key: str):
         from google import genai
@@ -58,7 +56,6 @@ class GemmaAssistant(BaseAssistant):
     def get_response(self, chat_history: list[dict[str, str]], context: str) -> str:
         from google.genai import types
 
-        context = self.get_context(user_query=chat_history[0]["content"])
         contents = [f"{his["role"]}: {his["content"]}" for his in chat_history]
 
         response = self.client.models.generate_content(
@@ -66,7 +63,7 @@ class GemmaAssistant(BaseAssistant):
             contents=contents,
             config=types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(thinking_level="high"),
-                system_instruction=SYSTEM_PROMPT
+                system_instruction=SYSTEM_PROMPT.format(CONTEXT=context)
             ),
         )
 

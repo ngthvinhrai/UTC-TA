@@ -1,9 +1,9 @@
 from src.backend.processing import file_converter
-from src.backend.agents.llm import get_assistant
+from src.backend.graph import get_graph
+from logs.logging import result_logging, chat_logging
 from dotenv import load_dotenv
 import streamlit as st
-import os
-import time
+import os, time, json
 import markdown
 
 load_dotenv()
@@ -105,23 +105,30 @@ class Interface:
         for message in st.session_state.messages:
             st.markdown(self.get_message_html(message["role"], message["content"]), unsafe_allow_html=True)
 
-        llm = get_assistant(selected_model)
-        
+        assistant = get_graph(llm=selected_model)
+
         # Xử lý Input
         if query := st.chat_input("Bạn muốn hỏi gì..."):
             # Hiển thị User Message
             st.session_state.messages.append({"role": "user", "content": query})
             st.markdown(self.get_message_html("user", query), unsafe_allow_html=True)
-            chat_history.append({"role": "user", "content": query})
+            chat_history = st.session_state.messages.copy()[-7:]
 
             # Khởi tạo vùng trống cho Assistant streaming
             full_response = ""
             message_placeholder = st.empty()
-            context = ""
+  
+            initial_state = {
+                "chat_history": chat_history,
+                "context": "",
+                "route": "",
+                "response": ""
+            }
 
-            if st.session_state.has_retrieved and "retriever" in st.session_state:
-                context = st.session_state.retriever.search(query=query)
-            response = llm.get_response(chat_history=st.session_state.messages, context=context)
+            result = assistant.app.invoke(initial_state)
+            result["chat_history"] = chat_history[-1]
+            result_logging(result=[result])
+            response = result["response"]
 
             # Giả lập streaming (Thay đoạn này bằng generator từ LLM của bạn)
             
