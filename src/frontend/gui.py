@@ -3,7 +3,7 @@ from src.backend.graph import get_graph
 from logs.logging import result_logging, chat_logging
 from dotenv import load_dotenv
 import streamlit as st
-import os, time, json
+import os, time, json, random
 import markdown
 
 load_dotenv()
@@ -117,6 +117,11 @@ class Interface:
             # Khởi tạo vùng trống cho Assistant streaming
             full_response = ""
             message_placeholder = st.empty()
+            waiting_text = random.choice(["Đang suy nghĩ...", "Không có việc gì làm à mà cứ le ve ở đây thế", "Đợi tí!!"])
+            message_placeholder.markdown(
+                self.get_message_html("assistant", f"*{waiting_text}*"), 
+                unsafe_allow_html=True
+            )
   
             initial_state = {
                 "chat_history": chat_history,
