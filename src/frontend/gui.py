@@ -12,6 +12,8 @@ class Interface:
     def __init__(self):
         st.set_page_config(page_title="UTC Teaching Assistant", page_icon="🧮", layout="wide")
         
+        if "has_retrieved" not in st.session_state:
+            st.session_state.has_retrieved = False
         if "messages" not in st.session_state:
             st.session_state.messages = []
         if "selected_model" not in st.session_state:
@@ -66,12 +68,27 @@ class Interface:
             uploaded_files = st.file_uploader("Upload file", type=["pdf", "txt", "docx"], accept_multiple_files=True)
             if st.button("Nạp tài liệu"):
                 if uploaded_files:
+                    from src.backend.embedding import get_embedder
+                    from src.backend.agents.chunker import chunk_structure_aware
+                    from src.backend.processing import file_converter
+                    from src.backend.store.embedding_store import EmbeddingStore
+                    from src.backend.agents.retriever import SemanticSearch
+
+                    with st.spinner("Đang xử lý dữ liệu"):
+                        converted_files = file_converter(uploaded_files)
+                        chunks = chunk_structure_aware("\n".join(converted_files))
+                        embedder = get_embedder()
+                        store = EmbeddingStore(embedding_fn=embedder)
+                        store.add_documents(chunks=chunks)
+                        st.session_state.retriever = SemanticSearch(store)
+
+                        st.session_state.has_retrieved = True
                     st.success("Đã nạp tài liệu thành công!")
                 else: 
                     st.error("Chưa có tài liệu")
 
             # --- THÊM TÍNH NĂNG CHỌN MODEL Ở ĐÂY ---
-            st.container(height=440, border=False)
+            # st.container(height=440, border=False)
             model_options = ["Open AI", "Gemma"]            
             selected_model = st.selectbox(
                 "",
@@ -100,9 +117,13 @@ class Interface:
             # Khởi tạo vùng trống cho Assistant streaming
             full_response = ""
             message_placeholder = st.empty()
+            context = ""
+
+            if st.session_state.has_retrieved and "retriever" in st.session_state:
+                context = st.session_state.retriever.search(query=query)
+            response = llm.get_response(chat_history=st.session_state.messages, context=context)
 
             # Giả lập streaming (Thay đoạn này bằng generator từ LLM của bạn)
-            response = llm.get_response(chat_history=st.session_state.messages)
             
             for chunk in response.split(" "):
                 if chunk is not None: full_response += chunk + " "
