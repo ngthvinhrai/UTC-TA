@@ -39,6 +39,11 @@ class LocalEmbedder:
             return embedding.tolist()
         return [float(value) for value in embedding]
 
+    def encode_batch(self, texts: list[str]) -> list[list[float]]:
+        """Encode multiple texts at once using batch processing."""
+        embeddings = self.model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        return [emb.tolist() if hasattr(emb, "tolist") else [float(v) for v in emb] for emb in embeddings]
+
 
 class OpenAIEmbedder:
     """OpenAI embeddings API-backed embedder."""

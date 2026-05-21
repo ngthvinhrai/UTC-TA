@@ -3,3 +3,4 @@ test
 __pycache__/
 *.code-workspace
 logs
+AGENTS.md

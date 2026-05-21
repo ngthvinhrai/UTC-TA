@@ -50,7 +50,7 @@ class Graph:
             return {"route": "direct"}
 
     def retrieve_node(self, state: GraphState) -> dict:
-        contexts = st.session_state.retriever.search(state["chat_history"][-1]["content"])
+        contexts = st.session_state.retriever.search("\n".join([f"{c["role"]}: {c["content"]}" for c in state["chat_history"]]))
         # context_logging(contexts)
         context = "\n".join([c["content"] for c in contexts])
 

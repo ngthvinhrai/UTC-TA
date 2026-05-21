@@ -178,7 +178,7 @@ def chunk_hierarchical(
 # ─── Strategy 3: Structure-Aware Chunking ────────────────
 
 
-def chunk_structure_aware(text: str, metadata: dict | None = None) -> list[Chunk]:
+def chunk_structure_aware(text: str, metadata: dict | None = None, max_chunk_size: int = 1000) -> list[Chunk]:
     """
     Parse markdown headers → chunk theo logical structure.
     Giữ nguyên tables, code blocks, lists — không cắt giữa chừng.
@@ -186,12 +186,13 @@ def chunk_structure_aware(text: str, metadata: dict | None = None) -> list[Chunk
     Args:
         text: Markdown text.
         metadata: Metadata gắn vào mỗi chunk.
+        max_chunk_size: Maximum characters per chunk. Sections larger than this
+                        will be split by paragraphs to avoid oversized chunks.
 
     Returns:
         List of Chunk objects, mỗi chunk = 1 section (header + content).
     """
     metadata = metadata or {}
-    # Implement structure-aware chunking
     # 1. Split by markdown headers:
     sections = re.split(r'(^#{1,3}\s+.+$)', text, flags=re.MULTILINE)
     #
@@ -199,28 +200,51 @@ def chunk_structure_aware(text: str, metadata: dict | None = None) -> list[Chunk
     chunks = []
     current_header = ""
     current_content = ""
+    chunk_index = 0
+
+    def finalize_chunk(header: str, content: str):
+        nonlocal chunk_index
+        combined = f"{header}\n{content}".strip()
+        if not combined:
+            return
+        # If chunk exceeds max_chunk_size, split by paragraphs
+        if len(combined) > max_chunk_size:
+            paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
+            current_part = header + "\n\n" if header else ""
+            for para in paragraphs:
+                if len(current_part) + len(para) > max_chunk_size and current_part.strip():
+                    chunks.append(Chunk(
+                        text=current_part.strip(),
+                        metadata={**metadata, "section": header, "strategy": "structure", "chunk_index": chunk_index}
+                    ))
+                    chunk_index += 1
+                    current_part = header + "\n\n" if header else ""
+                current_part += para + "\n\n"
+            if current_part.strip():
+                chunks.append(Chunk(
+                    text=current_part.strip(),
+                    metadata={**metadata, "section": header, "strategy": "structure", "chunk_index": chunk_index}
+                ))
+                chunk_index += 1
+        else:
+            chunks.append(Chunk(
+                text=combined,
+                metadata={**metadata, "section": header, "strategy": "structure", "chunk_index": chunk_index}
+            ))
+            chunk_index += 1
+
     for part in sections:
         if re.match(r'^#{1,3}\s+', part):
             if current_content.strip():
-                chunks.append(Chunk(
-                    text=f"{current_header}\n{current_content}".strip(),
-                    metadata={**metadata, "section": current_header, "strategy": "structure"}
-                ))
+                finalize_chunk(current_header, current_content)
             current_header = part.strip()
             current_content = ""
         else:
             current_content += part
-        
-    chunks.append(Chunk(
-        text=f"{current_header}\n{current_content}".strip(),
-        metadata={**metadata, "section": current_header, "strategy": "structure"}
-    ))
 
-    #
-    # 3. Return chunks — mỗi chunk = 1 section hoàn chỉnh
-    #
-    # Ưu điểm: giữ nguyên tables, lists, code blocks
-    # Dùng khi: corpus có structured documents (docs, API refs, manuals)
+    # Final chunk
+    finalize_chunk(current_header, current_content)
+
     return chunks
 
 if __name__ == "__main__":

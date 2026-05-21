@@ -49,11 +49,10 @@ class EmbeddingStore:
         scored_records.sort(key=lambda x: x["score"], reverse=True)
         return scored_records[:top_k]
 
-    def add_documents(self, chunks: list[Chunk]) -> None:
+    def add_documents(self, chunks: list[Chunk], progress_callback=None) -> None:
         """Embed each document's content and store it."""
         ids = [chunk.id or str(uuid.uuid4()) for chunk in chunks]
         contents = [chunk.text for chunk in chunks]
-        embeddings = [self._embedding_fn(chunk.text) for chunk in chunks]
         
         metadatas = []
         for chunk in chunks:
@@ -61,6 +60,17 @@ class EmbeddingStore:
             if "doc_id" not in meta and chunk.id:
                 meta["doc_id"] = chunk.id
             metadatas.append(meta)
+
+        # Batch encoding if available
+        batch_fn = getattr(self._embedding_fn, "encode_batch", None)
+        if batch_fn and len(chunks) > 1:
+            embeddings = batch_fn(contents)
+        else:
+            embeddings = []
+            for i, chunk in enumerate(chunks):
+                embeddings.append(self._embedding_fn(chunk.text))
+                if progress_callback:
+                    progress_callback(i + 1, len(chunks))
 
         if self._use_chroma:
             self._collection.add(

@@ -15,7 +15,7 @@ class SemanticSearch:
     def __init__(self, store):
         self.store = store
 
-    def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+    def search(self, query: str, top_k: int = 3) -> list[dict[str, Any]]:
 
         return self.store.search(query, top_k)
         """
