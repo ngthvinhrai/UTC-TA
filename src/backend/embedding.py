@@ -3,7 +3,7 @@ import streamlit as st
 import hashlib
 import math
 
-LOCAL_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+LOCAL_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_PROVIDER_ENV = "EMBEDDING_PROVIDER"
 
@@ -27,8 +27,6 @@ class MockEmbedder:
 
 
 class LocalEmbedder:
-    """Sentence Transformers-backed local embedder."""
-
     def __init__(self, model_name: str = LOCAL_EMBEDDING_MODEL) -> None:
         from sentence_transformers import SentenceTransformer
         self.model = SentenceTransformer(model_name)
@@ -62,4 +60,6 @@ class OpenAIEmbedder:
 
 @st.cache_resource
 def get_embedder():
-    return LocalEmbedder()
+    from langchain_huggingface.embeddings import HuggingFaceEmbeddings
+
+    return HuggingFaceEmbeddings(model_name=LOCAL_EMBEDDING_MODEL)

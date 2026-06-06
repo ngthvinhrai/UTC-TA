@@ -1,14 +1,17 @@
-from src.backend.processing import file_converter
 from src.backend.graph import get_graph
-from logs.logging import result_logging, chat_logging
-from dotenv import load_dotenv
+from logs.logging import chat_logging, result_logging
+from src.backend.core.schema import SearchResult
 import streamlit as st
-import streamlit.components.v1 as components
-import os, time, json, random
+import time, random
 import markdown
 import re
 
-load_dotenv()
+WAITING_TEXTS = [
+    "Đang suy nghĩ...",
+    "Không có việc gì làm à mà cứ le ve ở đây thế", 
+    "Đợi tí!!",
+    "FACT: Người phát triển ứng dụng này là 1 trong 500 kỹ sư được VinGroup lựa chọn tham gia chương trình **AI thực chiến**"
+]
 
 def _protect_math(text: str):
     """Replace LaTeX math blocks with placeholders so markdown doesn't mangle them."""
@@ -99,8 +102,6 @@ window.MathJax = {{
 </body>
 </html>"""
     return html_page
-    components.html(html_page, height=200, scrolling=True)
-
 
 class Interface:
     def __init__(self):
@@ -111,7 +112,7 @@ class Interface:
         if "messages" not in st.session_state:
             st.session_state.messages = []
         if "selected_model" not in st.session_state:
-            st.session_state.selected_model = "Open AI"
+            st.session_state.selected_model = "OpenAI"
 
         self.initialize()
 
@@ -120,12 +121,15 @@ class Interface:
             st.title("📚 Tài liệu bổ trợ")
             uploaded_files = st.file_uploader("Upload file", type=["pdf", "txt", "docx"], accept_multiple_files=True)
             if st.button("Nạp tài liệu"):
+                from src.backend.embedding import get_embedder
+                from src.backend.agents.chunker import chunk_structure_aware
+                from src.backend.processing import file_converter
+                from src.backend.store.store import KnowledgeStore
+                from src.backend.agents.retriever import Retriever
+                
+                # embedder = get_embedder()
+
                 if uploaded_files:
-                    from src.backend.embedding import get_embedder
-                    from src.backend.agents.chunker import chunk_structure_aware
-                    from src.backend.processing import file_converter, convert_single_file
-                    from src.backend.store.embedding_store import EmbeddingStore
-                    from src.backend.agents.retriever import SemanticSearch
 
                     progress_bar = st.progress(0, text="Đang chuyển đổi tài liệu...")
                     converted_files = file_converter(uploaded_files)
@@ -137,23 +141,27 @@ class Interface:
                     progress_bar.progress(100, text=f"Đã chia thành {len(chunks)} đoạn!")
 
                     progress_bar.progress(0, text="Đang tạo embedding...")
-                    embedder = get_embedder()
-                    store = EmbeddingStore(embedding_fn=embedder)
-
-                    def embed_progress(current, total):
-                        progress_bar.progress(current / total, text=f"Đang embedding: {current}/{total}")
-
-                    store.add_documents(chunks=chunks, progress_callback=embed_progress)
+                    store = KnowledgeStore(
+                        chunks=chunks,
+                        # embedding=embedder
+                    )
                     progress_bar.progress(100, text="Hoàn tất embedding!")
 
-                    st.session_state.retriever = SemanticSearch(store)
+                    st.session_state.retriever = Retriever(store)
                     st.session_state.has_retrieved = True
                     progress_bar.empty()
                     st.success(f"Đã nạp tài liệu thành công! ({len(chunks)} đoạn)")
-                else: 
-                    st.error("Chưa có tài liệu")
+                else:
+                    try:
+                        # store = KnowledgeStore(embedding_fn=embedder)
+                        st.session_state.retriever = Retriever(store)
+                        st.session_state.has_retrieved = True
+                        st.success(f"Đã nạp tài liệu thành công!")
 
-            model_options = ["Open AI", "Gemma"]            
+                    except Exception: 
+                        st.error("Chưa có tài liệu")
+
+            model_options = ["OpenAI", "Gemini", "Gemma", "DeepSeek"]            
             selected_model = st.selectbox(
                 "",
                 options=model_options,
@@ -172,11 +180,11 @@ class Interface:
         if query := st.chat_input("Bạn muốn hỏi gì..."):
             st.session_state.messages.append({"role": "user", "content": query})
             st.html(render_chat("user", query), unsafe_allow_javascript=True)
-            chat_history = st.session_state.messages.copy()[-7:]
+            chat_history = st.session_state.messages.copy()[-1:]
 
             full_response = ""
             message_placeholder = st.empty()
-            waiting_text = random.choice(["Đang suy nghĩ...", "Không có việc gì làm à mà cứ le ve ở đây thế", "Đợi tí!!"])
+            waiting_text = random.choice(WAITING_TEXTS)
             message_placeholder.html(
                 render_chat("assistant", f"*{waiting_text}*"),
                 unsafe_allow_javascript=True 
@@ -202,9 +210,18 @@ class Interface:
             
             message_placeholder.empty()
             st.session_state.messages.append({"role": "assistant", "content": full_response})
-            chat_logging(
-                chat=[{"role": "user", "content": query}, {"role": "assistant", "content": full_response}],
-                route=result.get("route", ""),
-                context=result.get("context", "")
-            )
+            result_logging(self.dump_to_dict(result))
             st.rerun()
+
+    def dump_to_dict(self, result):
+        return {
+            "bot_response": result["response"],
+            "contexts": [
+                {
+                    "text": rs.chunk.text,
+                    "rank": rs.rank,
+                    "score": rs.score
+                }
+                for rs in result["context"]
+            ]
+        }

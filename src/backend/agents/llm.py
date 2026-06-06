@@ -2,8 +2,7 @@ import streamlit as st
 from dotenv import load_dotenv
 import os
 from abc import ABC, abstractmethod
-from src.backend.agents.prompt import SYSTEM_PROMPT, ROUTER_PROMPT
-from typing import Any
+from src.backend.agents.prompt import GENERATOR_PROMPT, ROUTER_PROMPT
 load_dotenv()
 
 class BaseAssistant(ABC):
@@ -16,15 +15,16 @@ class BaseAssistant(ABC):
         """"""
 
 class OpenAIAssistant(BaseAssistant):
-    def __init__(self, model: str, api_key: str):
+    def __init__(self, model: str, api_key: str, base_url: str=None):
         from openai import OpenAI
         self.model = model
         self.client = OpenAI(
-            api_key=api_key
+            api_key=api_key,
+            base_url=base_url
         )
 
-    def get_response(self, chat_history: list[dict[str, str]], context: str) -> str:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT.format(CONTEXT=context)}, *chat_history]
+    def get_response(self, chat_history: list[dict[str, str]], context: list[str]) -> str:
+        messages = [{"role": "system", "content": GENERATOR_PROMPT.format(CONTEXT="\n".join(context))}, *chat_history]
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -53,7 +53,7 @@ class GemmaAssistant(BaseAssistant):
             api_key=api_key
         )
 
-    def get_response(self, chat_history: list[dict[str, str]], context: str) -> str:
+    def get_response(self, chat_history: list[dict[str, str]], context: list[str]) -> str:
         from google.genai import types
 
         contents = [f"{his["role"]}: {his["content"]}" for his in chat_history]
@@ -63,7 +63,7 @@ class GemmaAssistant(BaseAssistant):
             contents=contents,
             config=types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(thinking_level="high"),
-                system_instruction=SYSTEM_PROMPT.format(CONTEXT=context)
+                system_instruction=GENERATOR_PROMPT.format(CONTEXT="\n".join(context))
             ),
         )
 
@@ -73,7 +73,7 @@ class GemmaAssistant(BaseAssistant):
 @st.cache_resource
 def get_assistant(model: str):
     match model:
-        case "Open AI": 
+        case "OpenAI": 
             return OpenAIAssistant(
                 model=os.getenv("OPENAI_MODEL"),
                 api_key=os.getenv("OPENAI_API_KEY")
@@ -82,7 +82,19 @@ def get_assistant(model: str):
         case "Gemma":
             return GemmaAssistant(
                 model=os.getenv("GEMMA_MODEL"),
-                api_key=os.getenv("GOOGLE_API_KEY")
+                api_key=os.getenv("GEMMA_API_KEY")
+            )
+        case "Gemini":
+            return OpenAIAssistant(
+                model=os.getenv("GEMINI_MODEL"),
+                api_key=os.getenv("GEMINI_API_KEY"),
+                base_url=os.getenv("GEMINI_BASE_URL")
+            )
+        case "DeepSeek":
+            return OpenAIAssistant(
+                model=os.getenv("GEMINI_MODEL"),
+                api_key=os.getenv("GEMINI_API_KEY"),
+                base_url=os.getenv("GEMINI_BASE_URL")
             )
         case _:
             return OpenAIAssistant(

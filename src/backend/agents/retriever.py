@@ -1,40 +1,11 @@
 from typing import Any
-from dataclasses import dataclass
-from dotenv import load_dotenv
-import os
-load_dotenv()
+from src.backend.core.schema import SearchResult
+from src.backend.store.store import KnowledgeStore
 
-@dataclass
-class SearchResult:
-    text: str
-    score: float
-    metadata: dict
-    method: str  # "bm25", "dense", "hybrid"
-
-class SemanticSearch:
-    def __init__(self, store):
+class Retriever:
+    def __init__(self, store: KnowledgeStore):
         self.store = store
 
-    def search(self, query: str, top_k: int = 3) -> list[dict[str, Any]]:
-
-        return self.store.search(query, top_k)
-        """
-        Find the top_k most similar documents to query.
-
-        For in-memory: compute dot product of query embedding vs all stored embeddings.
-        """
-        if self._use_chroma:
-            results = self._collection.query(
-                query_embeddings=[self._embedding_fn(query)],
-                n_results=top_k
-            )
-            formatted_results = []
-            for i in range(len(results['ids'][0])):
-                formatted_results.append({
-                    "id": results['ids'][0][i],
-                    "content": results['documents'][0][i],
-                    "metadata": results['metadatas'][0][i],
-                })
-            return formatted_results
-        else:
-            return self._search_records(query, self._store, top_k)
+    def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
+        result = self.store.bm25_search(query, top_k)
+        return self.store.vector_search(query, top_k)

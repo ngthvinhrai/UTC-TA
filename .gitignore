@@ -4,3 +4,8 @@ __pycache__/
 *.code-workspace
 logs
 AGENTS.md
+rubish.md
+chromadb
+*.json
+*.jsonl
+data

@@ -1,22 +1,6 @@
-"""
-Module 1: Advanced Chunking Strategies
-=======================================
-Implement semantic, hierarchical, và structure-aware chunking.
-So sánh với basic chunking (baseline) để thấy improvement.
-
-Test: pytest tests/test_m1.py
-"""
-
 import re
 from dataclasses import dataclass, field
-
-@dataclass
-class Chunk:
-    text: str
-    metadata: dict = field(default_factory=dict)
-    id: str | None = ""
-    parent_id: str | None = None
-# ─── Baseline: Basic Chunking (để so sánh) ──────────────
+from src.backend.core.schema import Chunk
 
 
 def chunk_basic(text: str, chunk_size: int = 500, metadata: dict | None = None) -> list[Chunk]:
@@ -36,13 +20,6 @@ def chunk_basic(text: str, chunk_size: int = 500, metadata: dict | None = None) 
         current += para + "\n\n"
     if current.strip():
         chunks.append(Chunk(text=current.strip(), metadata={**metadata, "chunk_index": len(chunks)}))
-    
-    stat = {
-        "Chunks": len(chunks),
-        "Avg Len": sum([len(c.text) for c in chunks])/len(chunks),
-        "Min": min([len(c.text) for c in chunks]),
-        "Max": max([len(c.text) for c in chunks])
-    }
 
     return chunks
 
@@ -179,19 +156,6 @@ def chunk_hierarchical(
 
 
 def chunk_structure_aware(text: str, metadata: dict | None = None, max_chunk_size: int = 1000) -> list[Chunk]:
-    """
-    Parse markdown headers → chunk theo logical structure.
-    Giữ nguyên tables, code blocks, lists — không cắt giữa chừng.
-
-    Args:
-        text: Markdown text.
-        metadata: Metadata gắn vào mỗi chunk.
-        max_chunk_size: Maximum characters per chunk. Sections larger than this
-                        will be split by paragraphs to avoid oversized chunks.
-
-    Returns:
-        List of Chunk objects, mỗi chunk = 1 section (header + content).
-    """
     metadata = metadata or {}
     # 1. Split by markdown headers:
     sections = re.split(r'(^#{1,3}\s+.+$)', text, flags=re.MULTILINE)
@@ -242,7 +206,6 @@ def chunk_structure_aware(text: str, metadata: dict | None = None, max_chunk_siz
         else:
             current_content += part
 
-    # Final chunk
     finalize_chunk(current_header, current_content)
 
     return chunks

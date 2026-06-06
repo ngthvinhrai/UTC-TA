@@ -6,7 +6,6 @@ from markitdown import MarkItDown
 
 
 def _convert_pdf(file_path: str, progress_bar=None) -> str:
-    """Convert PDF to Markdown with optimized settings for speed + quality."""
     import pymupdf
     doc = pymupdf.open(file_path)
     total_pages = len(doc)
@@ -39,19 +38,16 @@ def _convert_pdf(file_path: str, progress_bar=None) -> str:
 
 
 def _convert_txt(file_path: str) -> str:
-    """Read text file directly — no conversion needed."""
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
 
 
 def _convert_docx(file_path: str) -> str:
-    """Convert DOCX to Markdown using MarkItDown (no LLM, fast)."""
     converter = MarkItDown(enable_plugins=False)
     return converter.convert(file_path).markdown
 
 
 def file_converter(uploaded_files: list) -> list:
-    """Convert uploaded files (pdf/txt/docx) to Markdown."""
     combined_md = []
     with tempfile.TemporaryDirectory() as temp_dir:
         for uploaded_file in uploaded_files:
@@ -78,7 +74,6 @@ def file_converter(uploaded_files: list) -> list:
 
 
 def convert_single_file(file_path: str) -> str:
-    """Convert a single file by path — auto-detect type."""
     ext = file_path.rsplit(".", 1)[-1].lower()
     if ext == "pdf":
         return _convert_pdf(file_path)

@@ -1,14 +1,7 @@
-from langgraph.graph import StateGraph, START, END
-from typing import TypedDict, Literal
+from langgraph.graph import StateGraph, END
 from src.backend.agents.llm import get_assistant
-from logs.logging import context_logging, chat_logging
+from src.backend.core.schema import GraphState
 import streamlit as st
-
-class GraphState(TypedDict):
-    chat_history: list[dict[str, str]]
-    context: str = ""
-    route: str
-    response: str
 
 class Graph:
     def __init__(self, llm):
@@ -38,9 +31,8 @@ class Graph:
         return graph.compile()
     
     def route_node(self, state: GraphState) -> dict:
+        # return {"route": "retrieve"}
         if not st.session_state.get("has_retrieved", False): return {"route": "direct"}
-        # chat_logging(state["chat_history"])
-
 
         decision = self.llm.get_router_response(state["chat_history"][-1]["content"])
 
@@ -51,15 +43,13 @@ class Graph:
 
     def retrieve_node(self, state: GraphState) -> dict:
         contexts = st.session_state.retriever.search("\n".join([f"{c["role"]}: {c["content"]}" for c in state["chat_history"]]))
-        # context_logging(contexts)
-        context = "\n".join([c["content"] for c in contexts])
 
-        return {"context": context}
+        return {"context": contexts}
 
     def generate_node(self, state: GraphState) -> dict:
         response = self.llm.get_response(
             chat_history=state["chat_history"],
-            context=state["context"]
+            context=[c.chunk.text for c in state["context"]]
         )
 
         return {"response": response}
