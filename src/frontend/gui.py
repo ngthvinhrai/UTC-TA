@@ -6,6 +6,8 @@ import time, random
 import markdown
 import re
 
+st.write("XSRF:", False)
+
 WAITING_TEXTS = [
     "Đang suy nghĩ...",
     "Không có việc gì làm à mà cứ le ve ở đây thế", 

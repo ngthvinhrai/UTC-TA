@@ -1,9 +1,13 @@
 from __future__ import annotations
+import os
+import requests
 from typing import Any
 import uuid
 from src.backend.core.schema import Chunk, SearchResult
 from rank_bm25 import BM25Okapi
 from turbovec.langchain import TurboQuantVectorStore
+
+FASTAPI_URL = os.getenv("FASTAPI_URL")
 
 class KnowledgeStore:
     def __init__(
@@ -12,7 +16,7 @@ class KnowledgeStore:
         # embedding: Any
     ) -> "KnowledgeStore":
         self._chunks = chunks
-        self.embedding = get_embedder()
+        # self.embedding = get_embedder()
         self.bm25_index = self._build_bm25_index(chunks)
         self.vector_index = self._build_vector_index(chunks)
 
@@ -28,13 +32,15 @@ class KnowledgeStore:
             "metadata": chunk.metadata
         } for chunk in chunks]
 
-        store = TurboQuantVectorStore(embedding=self.embedding).from_texts(
-            texts=chunk_list,
-            embedding=self.embedding,
-            metadatas=metadatas
+        resposne = requests.post(
+            url=f"{FASTAPI_URL}/vector_store",
+            json={
+                "text": chunk_list,
+                "metadata": metadatas
+            }
         )
 
-        return store
+        return resposne.json()["store"]
     
     def bm25_search(self, query: str, top_k: int=10) -> list[SearchResult]:
         if top_k <= 0 or not self._chunks:
@@ -64,10 +70,15 @@ class KnowledgeStore:
         return results
     
     def vector_search(self, query: str, top_k: int=10) -> list[SearchResult]:
-        search_result = self.vector_index.similarity_search_with_score(
-            query=query,
-            k=top_k
+        response = requests.post(
+            url=f"{FASTAPI_URL}/vector_search",
+            json={
+                "query": query,
+                "top_k": top_k
+            }
         )
+
+        search_result = response.json()
 
         result = []
 
@@ -75,9 +86,9 @@ class KnowledgeStore:
             result.append(
                 SearchResult(
                     chunk=Chunk(
-                        text=doc.page_content,
-                        id=doc.metadata["id"],
-                        metadata=doc.metadata["metadata"]
+                        text=doc["page_content"],
+                        id=doc["metadata"]["id"],
+                        metadata=doc["metadata"]["metadata"]
                     ),
                     score=score,
                     rank=i + 1,
@@ -91,8 +102,16 @@ class KnowledgeStore:
         return text.split()
     
 def get_embedder():
+
+    if os.getenv("EMBEDDING_MODEL"):
+        from langchain_huggingface.embeddings import HuggingFaceEmbeddings
+        return HuggingFaceEmbeddings(
+            model_name=os.getenv("EMBEDDING_MODEL")
+        )
+
     from langchain_openai.embeddings.base import OpenAIEmbeddings
 
     return OpenAIEmbeddings(
         model="text-embedding-3-small",
     )
+
