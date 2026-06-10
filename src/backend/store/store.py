@@ -18,29 +18,29 @@ class KnowledgeStore:
         self._chunks = chunks
         # self.embedding = get_embedder()
         self.bm25_index = self._build_bm25_index(chunks)
-        self.vector_index = self._build_vector_index(chunks)
+        self._build_vector_index(chunks)
 
     def _build_bm25_index(self, chunks: list[Chunk]) -> BM25Okapi:
         corpus = [self._tokenize(chunk.text) for chunk in chunks]
         store = BM25Okapi(corpus=corpus) 
         return store
     
-    def _build_vector_index(self, chunks: list[Chunk]) -> Any:
+    def _build_vector_index(self, chunks: list[Chunk]):
         chunk_list = [chunk.text for chunk in chunks]
         metadatas = [{
             "id": chunk.id,
             "metadata": chunk.metadata
         } for chunk in chunks]
 
-        resposne = requests.post(
-            url=f"{FASTAPI_URL}/vector_store",
-            json={
-                "text": chunk_list,
-                "metadata": metadatas
-            }
-        )
-
-        return resposne.json()["store"]
+        for i in range(0, len(chunk_list), 250):
+            end_idx = min(i + 250, len(chunk_list))    
+            requests.post(
+                url=f"{FASTAPI_URL}/vector_store",
+                json={
+                    "text": chunk_list[i:end_idx],
+                    "metadata": metadatas[i:end_idx]
+                }
+            )
     
     def bm25_search(self, query: str, top_k: int=10) -> list[SearchResult]:
         if top_k <= 0 or not self._chunks:

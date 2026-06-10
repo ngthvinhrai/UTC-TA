@@ -134,11 +134,12 @@ class Interface:
                 if uploaded_files:
 
                     progress_bar = st.progress(0, text="Đang chuyển đổi tài liệu...")
-                    converted_files = file_converter(uploaded_files)
-                    progress_bar.progress(100, text="Hoàn tất chuyển đổi!")
+                    # progress_bar.progress(100, text="Hoàn tất chuyển đổi!")
 
-                    progress_bar.progress(0, text="Đang chia nhỏ tài liệu...")
-                    combined_text = "\n".join(converted_files)
+                    # converted_files = file_converter(uploaded_files)
+                    # progress_bar.progress(0, text="Đang chia nhỏ tài liệu...")
+                    # combined_text = "\n".join(converted_files)
+                    with open("test/converted_result.md", "r", encoding="utf-8") as f: combined_text = f.read()
                     chunks = chunk_structure_aware(combined_text)
                     progress_bar.progress(100, text=f"Đã chia thành {len(chunks)} đoạn!")
 

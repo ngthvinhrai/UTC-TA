@@ -1,8 +1,10 @@
 import tempfile
-import os
+import os, re
 import streamlit as st
 import pymupdf4llm
 from markitdown import MarkItDown
+import networkx as nx
+from underthesea import word_tokenize, pos_tag
 
 
 def _convert_pdf(file_path: str, progress_bar=None) -> str:
@@ -82,3 +84,109 @@ def convert_single_file(file_path: str) -> str:
     elif ext in ("docx", "doc"):
         return _convert_docx(file_path)
     return ""
+
+
+def tokenize(text):
+    # underthesea works for both VI + EN
+
+    stopwords = {
+        "và", "là", "của", "có", "trong",
+        "một", "những", "được", "với",
+        "khi", "đó", "này", "cho",
+        "the", "a", "an", "is", "are",
+        "was", "were", "of", "to",
+        "in", "on", "for", "and"
+    }
+
+    # tokens = word_tokenize(text)
+    tagged = pos_tag(text)
+    candidates = []
+    for word, pos in tagged:
+        word = word.lower()
+        if (
+            word not in stopwords
+            and re.match(r"^[\w_]+$", word)
+            and pos in ["N", "Np", "A", "V"]
+        ):
+            candidates.append(word)
+    return candidates
+# ========================================
+# BUILD GRAPH
+# ========================================
+def build_graph(words, window_size=4):
+    graph = nx.Graph()
+    for i in range(len(words)):
+        for j in range(
+            i + 1,
+            min(i + window_size, len(words))
+        ):
+            w1 = words[i]
+            w2 = words[j]
+            if w1 != w2:
+                if graph.has_edge(w1, w2):
+                    graph[w1][w2]["weight"] += 1
+                else:
+                    graph.add_edge(
+                        w1,
+                        w2,
+                        weight=1
+                    )
+    return graph
+# ========================================
+# TEXTRANK
+# ========================================
+def textrank(graph):
+    return nx.pagerank(
+        graph,
+        weight="weight"
+    )
+# ========================================
+# EXTRACT KEYPHRASES
+# ========================================
+def extract_keyphrase(text, top_k=10):
+    words = tokenize(text)
+    if not words:
+        return []
+    graph = build_graph(words)
+    scores = textrank(graph)
+    ranked_vocab = {
+        word: score
+        for word, score in scores.items()
+    }
+    # Original token sequence
+    original_tokens = word_tokenize(text)
+    phrases = []
+    current_phrase = []
+    for token in original_tokens:
+        normalized = token.lower()
+        if normalized in ranked_vocab:
+            current_phrase.append(normalized)
+        else:
+            if current_phrase:
+                phrase = " ".join(current_phrase)
+                score = (
+                    sum(ranked_vocab[w] for w in current_phrase)
+                    / len(current_phrase)
+                )
+                phrases.append((phrase, score))
+                current_phrase = []
+    # Last phrase
+    if current_phrase:
+        phrase = " ".join(current_phrase)
+        score = (
+            sum(ranked_vocab[w] for w in current_phrase)
+            / len(current_phrase)
+        )
+        phrases.append((phrase, score))
+    # Remove duplicates
+    unique_phrases = {}
+    for phrase, score in phrases:
+        if phrase not in unique_phrases:
+            unique_phrases[phrase] = score
+    ranked_phrases = sorted(
+        unique_phrases.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
+    return ranked_phrases[:top_k]
+

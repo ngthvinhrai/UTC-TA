@@ -1,7 +1,5 @@
 import re
-from dataclasses import dataclass, field
 from src.backend.core.schema import Chunk
-
 
 def chunk_basic(text: str, chunk_size: int = 500, metadata: dict | None = None) -> list[Chunk]:
     """
@@ -179,7 +177,7 @@ def chunk_structure_aware(text: str, metadata: dict | None = None, max_chunk_siz
                 if len(current_part) + len(para) > max_chunk_size and current_part.strip():
                     chunks.append(Chunk(
                         text=current_part.strip(),
-                        metadata={**metadata, "section": header, "strategy": "structure", "chunk_index": chunk_index}
+                        metadata={**metadata, "section": header, "chunk_index": chunk_index}
                     ))
                     chunk_index += 1
                     current_part = header + "\n\n" if header else ""
@@ -187,13 +185,13 @@ def chunk_structure_aware(text: str, metadata: dict | None = None, max_chunk_siz
             if current_part.strip():
                 chunks.append(Chunk(
                     text=current_part.strip(),
-                    metadata={**metadata, "section": header, "strategy": "structure", "chunk_index": chunk_index}
+                    metadata={**metadata, "section": header, "chunk_index": chunk_index}
                 ))
                 chunk_index += 1
         else:
             chunks.append(Chunk(
                 text=combined,
-                metadata={**metadata, "section": header, "strategy": "structure", "chunk_index": chunk_index}
+                metadata={**metadata, "section": header, "chunk_index": chunk_index}
             ))
             chunk_index += 1
 
@@ -211,4 +209,7 @@ def chunk_structure_aware(text: str, metadata: dict | None = None, max_chunk_siz
     return chunks
 
 if __name__ == "__main__":
-    pass
+    with open("test/converted_result.md", "r", encoding="utf-8") as f:
+        texts = f.read()
+
+    print(chunk_structure_aware(texts))
