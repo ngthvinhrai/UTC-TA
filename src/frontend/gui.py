@@ -1,18 +1,21 @@
-from src.backend.graph import get_graph
+from src.backend.graph import get_graph, Graph
+from src.backend.agents.llm import get_assistant
+from src.backend.agents.retriever import Retriever
 from logs.logging import chat_logging, result_logging
-from src.backend.core.schema import SearchResult
+from src.backend.core.schema import SearchResult, Chunk
 import streamlit as st
 import time, random
 import markdown
 import re
+import os
 
-st.write("XSRF:", False)
+KSTORE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend", "store", "kstore"))
 
 WAITING_TEXTS = [
     "Đang suy nghĩ...",
     "Không có việc gì làm à mà cứ le ve ở đây thế", 
     "Đợi tí!!",
-    "FACT: Người phát triển ứng dụng này là 1 trong 500 kỹ sư được VinGroup lựa chọn tham gia chương trình **AI thực chiến**"
+    "FACT: Người phát triển ứng dụng này là 1 trong 500 kỹ sư được VinGroup lựa chọn tham gia chương trình **AI thực chiến**. "
 ]
 
 def _protect_math(text: str):
@@ -109,25 +112,26 @@ class Interface:
     def __init__(self):
         st.set_page_config(page_title="UTC Teaching Assistant", page_icon="🧮", layout="wide")
         
-        if "has_retrieved" not in st.session_state:
+        if "has_retrieved" in st.query_params:
+            st.session_state.has_retrieved = True
+        elif "has_retrieved" not in st.session_state:
             st.session_state.has_retrieved = False
         if "messages" not in st.session_state:
             st.session_state.messages = []
         if "selected_model" not in st.session_state:
             st.session_state.selected_model = "OpenAI"
 
-        self.initialize()
+        # self.initialize()
 
     def initialize(self):
         with st.sidebar:
             st.title("📚 Tài liệu bổ trợ")
+            st.write(st.session_state.has_retrieved)
             uploaded_files = st.file_uploader("Upload file", type=["pdf", "txt", "docx"], accept_multiple_files=True)
             if st.button("Nạp tài liệu"):
-                from src.backend.embedding import get_embedder
                 from src.backend.agents.chunker import chunk_structure_aware
                 from src.backend.processing import file_converter
                 from src.backend.store.store import KnowledgeStore
-                from src.backend.agents.retriever import Retriever
                 
                 # embedder = get_embedder()
 
@@ -136,33 +140,35 @@ class Interface:
                     progress_bar = st.progress(0, text="Đang chuyển đổi tài liệu...")
                     # progress_bar.progress(100, text="Hoàn tất chuyển đổi!")
 
-                    # converted_files = file_converter(uploaded_files)
-                    # progress_bar.progress(0, text="Đang chia nhỏ tài liệu...")
-                    # combined_text = "\n".join(converted_files)
-                    with open("test/converted_result.md", "r", encoding="utf-8") as f: combined_text = f.read()
+                    converted_files = file_converter(uploaded_files)
+                    progress_bar.progress(0, text="Đang chia nhỏ tài liệu...")
+                    combined_text = "\n".join(converted_files)
+                    # with open("test/converted_result.md", "r", encoding="utf-8") as f: combined_text = f.read()
                     chunks = chunk_structure_aware(combined_text)
                     progress_bar.progress(100, text=f"Đã chia thành {len(chunks)} đoạn!")
 
                     progress_bar.progress(0, text="Đang tạo embedding...")
-                    store = KnowledgeStore(
-                        chunks=chunks,
-                        # embedding=embedder
-                    )
+                    
+                    if os.path.exists(KSTORE_DIR):
+                        previous_chunks = _load_chunk()
+                        store = KnowledgeStore(
+                            chunks=chunks,
+                            previous_chunks=previous_chunks
+                        )
+                    else:
+                        store = KnowledgeStore(
+                            chunks=chunks
+                        )
+
+                    store.save(KSTORE_DIR)
                     progress_bar.progress(100, text="Hoàn tất embedding!")
 
-                    st.session_state.retriever = Retriever(store)
                     st.session_state.has_retrieved = True
+                    st.query_params["has_retrieved"] = "true"
                     progress_bar.empty()
                     st.success(f"Đã nạp tài liệu thành công! ({len(chunks)} đoạn)")
                 else:
-                    try:
-                        # store = KnowledgeStore(embedding_fn=embedder)
-                        st.session_state.retriever = Retriever(store)
-                        st.session_state.has_retrieved = True
-                        st.success(f"Đã nạp tài liệu thành công!")
-
-                    except Exception: 
-                        st.error("Chưa có tài liệu")
+                    st.warning("Vui lòng chọn file để nạp tài liệu.")
 
             model_options = ["OpenAI", "Gemini", "Gemma", "DeepSeek"]            
             selected_model = st.selectbox(
@@ -170,6 +176,7 @@ class Interface:
                 options=model_options,
                 index=model_options.index(st.session_state.selected_model)
             )
+            st.session_state.selected_model = selected_model
 
         st.markdown("### 🧮 UTC Teaching Assistant")
 
@@ -177,8 +184,18 @@ class Interface:
         for message in st.session_state.messages:
             st.html(render_chat(message["role"], message["content"]), unsafe_allow_javascript=True)
             
-
-        assistant = get_graph(llm=selected_model)
+        if "store" in st.query_params:
+            retriever = Retriever(st.query_params["store"])
+            assistant = Graph(
+                llm=get_assistant(selected_model),
+                retriever=retriever
+            )
+            
+        else:
+            assistant = Graph(
+                llm=get_assistant(selected_model),
+                retriever=None
+            )
 
         if query := st.chat_input("Bạn muốn hỏi gì..."):
             st.session_state.messages.append({"role": "user", "content": query})
@@ -213,18 +230,37 @@ class Interface:
             
             message_placeholder.empty()
             st.session_state.messages.append({"role": "assistant", "content": full_response})
-            result_logging(self.dump_to_dict(result))
+            result_logging(_dump_to_dict(result))
             st.rerun()
 
-    def dump_to_dict(self, result):
-        return {
-            "bot_response": result["response"],
-            "contexts": [
-                {
-                    "text": rs.chunk.text,
-                    "rank": rs.rank,
-                    "score": rs.score
-                }
-                for rs in result["context"]
-            ]
-        }
+def _dump_to_dict(result):
+    return {
+        "bot_response": result["response"],
+        "route": result["route"],
+        "contexts": [
+            {
+                "text": rs.chunk.text,
+                "rank": rs.rank,
+                "score": rs.score
+            }
+            for rs in result["context"]
+        ]
+    }
+
+def _load_chunk():
+    import json
+
+    chunks_list = []
+    with open(KSTORE_DIR + "/chunks.jsonl", "r", encoding="utf-8") as f:
+        for line in f:
+            chunk = json.loads(line)
+            chunks_list.append(
+                Chunk(
+                    text=chunk["text"],
+                    metadata=chunk["metadata"],
+                    id=chunk["id"],
+                    parent_id=chunk["parent_id"]
+                )
+            )
+    return chunks_list
+

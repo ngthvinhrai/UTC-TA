@@ -1,11 +1,17 @@
 from langgraph.graph import StateGraph, END
-from src.backend.agents.llm import get_assistant
+from src.backend.agents.llm import get_assistant, BaseAssistant
 from src.backend.core.schema import GraphState
+from src.backend.agents.retriever import Retriever
 import streamlit as st
 
 class Graph:
-    def __init__(self, llm):
+    def __init__(
+        self,
+        llm: BaseAssistant,
+        retriever: Retriever | None
+    ) -> "Graph":
         self.llm = llm
+        self.retriever = retriever
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -32,8 +38,8 @@ class Graph:
     
     def route_node(self, state: GraphState) -> dict:
         # return {"route": "retrieve"}
-        if not st.session_state.get("has_retrieved", False): return {"route": "direct"}
-
+        if not st.session_state.has_retrieved:
+            return {"route": "direct"}
         decision = self.llm.get_router_response(state["chat_history"][-1]["content"])
 
         if "retrieve" in decision.strip().lower():
@@ -42,7 +48,7 @@ class Graph:
             return {"route": "direct"}
 
     def retrieve_node(self, state: GraphState) -> dict:
-        contexts = st.session_state.retriever.search("\n".join([f"{c["role"]}: {c["content"]}" for c in state["chat_history"]]))
+        contexts = self.retriever.search("\n".join([f"{c["role"]}: {c["content"]}" for c in state["chat_history"]]))
 
         return {"context": contexts}
 
@@ -55,7 +61,8 @@ class Graph:
         return {"response": response}
 
 @st.cache_resource
-def get_graph(llm):
+def get_graph(llm, retriever):
     return Graph(
         llm=get_assistant(llm),
+        retriever=retriever
     )

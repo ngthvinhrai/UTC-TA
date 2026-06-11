@@ -1,4 +1,8 @@
 import re
+import time
+import random
+import hashlib
+
 from src.backend.core.schema import Chunk
 
 def chunk_basic(text: str, chunk_size: int = 500, metadata: dict | None = None) -> list[Chunk]:
@@ -177,7 +181,8 @@ def chunk_structure_aware(text: str, metadata: dict | None = None, max_chunk_siz
                 if len(current_part) + len(para) > max_chunk_size and current_part.strip():
                     chunks.append(Chunk(
                         text=current_part.strip(),
-                        metadata={**metadata, "section": header, "chunk_index": chunk_index}
+                        metadata={**metadata, "section": header},
+                        id=_generate_id()
                     ))
                     chunk_index += 1
                     current_part = header + "\n\n" if header else ""
@@ -185,13 +190,15 @@ def chunk_structure_aware(text: str, metadata: dict | None = None, max_chunk_siz
             if current_part.strip():
                 chunks.append(Chunk(
                     text=current_part.strip(),
-                    metadata={**metadata, "section": header, "chunk_index": chunk_index}
+                    metadata={**metadata, "section": header},
+                    id=_generate_id()
                 ))
                 chunk_index += 1
         else:
             chunks.append(Chunk(
                 text=combined,
-                metadata={**metadata, "section": header, "chunk_index": chunk_index}
+                metadata={**metadata, "section": header},
+                id=_generate_id()
             ))
             chunk_index += 1
 
@@ -207,6 +214,19 @@ def chunk_structure_aware(text: str, metadata: dict | None = None, max_chunk_siz
     finalize_chunk(current_header, current_content)
 
     return chunks
+
+def _generate_id():
+
+    # Lấy thời gian hiện tại (giây)
+    current_time = time.time()
+    
+    # Kết hợp thời gian với số ngẫu nhiên
+    random_seed = str(current_time) + str(random.randint(0, 999999))
+    
+    # Băm để tạo chuỗi "ngẫu nhiên"
+    code = hashlib.sha256(random_seed.encode()).hexdigest()
+    
+    return code[:16]  # cắt lấy 16 ký tự
 
 if __name__ == "__main__":
     with open("test/converted_result.md", "r", encoding="utf-8") as f:

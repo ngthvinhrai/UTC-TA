@@ -1,11 +1,8 @@
 from __future__ import annotations
 import os
 import requests
-from typing import Any
-import uuid
 from src.backend.core.schema import Chunk, SearchResult
 from rank_bm25 import BM25Okapi
-from turbovec.langchain import TurboQuantVectorStore
 
 FASTAPI_URL = os.getenv("FASTAPI_URL")
 
@@ -13,11 +10,10 @@ class KnowledgeStore:
     def __init__(
         self,
         chunks: list[Chunk],
-        # embedding: Any
+        previous_chunks: list[Chunk] | None = None
     ) -> "KnowledgeStore":
-        self._chunks = chunks
-        # self.embedding = get_embedder()
-        self.bm25_index = self._build_bm25_index(chunks)
+        self._chunks = chunks + previous_chunks if previous_chunks else chunks
+        self.bm25_index = self._build_bm25_index(self._chunks)
         self._build_vector_index(chunks)
 
     def _build_bm25_index(self, chunks: list[Chunk]) -> BM25Okapi:
@@ -27,10 +23,8 @@ class KnowledgeStore:
     
     def _build_vector_index(self, chunks: list[Chunk]):
         chunk_list = [chunk.text for chunk in chunks]
-        metadatas = [{
-            "id": chunk.id,
-            "metadata": chunk.metadata
-        } for chunk in chunks]
+        metadatas = [chunk.metadata for chunk in chunks]
+        ids = [chunk.id for chunk in chunks]
 
         for i in range(0, len(chunk_list), 250):
             end_idx = min(i + 250, len(chunk_list))    
@@ -38,7 +32,8 @@ class KnowledgeStore:
                 url=f"{FASTAPI_URL}/vector_store",
                 json={
                     "text": chunk_list[i:end_idx],
-                    "metadata": metadatas[i:end_idx]
+                    "metadata": metadatas[i:end_idx],
+                    "id": ids[i:end_idx]
                 }
             )
     
@@ -101,6 +96,17 @@ class KnowledgeStore:
     def _tokenize(self, text: str) -> list[str]:
         return text.split()
     
+    def save(self, path: str) -> None:
+        import json
+        
+        if not os.path.exists(path): 
+            os.makedirs(path, exist_ok=True)
+        
+        with open(path + "/chunks.jsonl", "w", encoding="utf-8") as f:
+            for chunk in self._chunks:
+                json.dump(chunk.model_dump(), f, ensure_ascii=False)
+                f.write("\n")
+
 def get_embedder():
 
     if os.getenv("EMBEDDING_MODEL"):
