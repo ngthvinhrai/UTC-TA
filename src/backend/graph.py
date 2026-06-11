@@ -8,7 +8,7 @@ class Graph:
     def __init__(
         self,
         llm: BaseAssistant,
-        retriever: Retriever | None
+        retriever: Retriever | None = None
     ) -> "Graph":
         self.llm = llm
         self.retriever = retriever

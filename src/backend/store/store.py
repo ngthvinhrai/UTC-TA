@@ -13,6 +13,7 @@ class KnowledgeStore:
         previous_chunks: list[Chunk] | None = None
     ) -> "KnowledgeStore":
         self._chunks = chunks + previous_chunks if previous_chunks else chunks
+        self._previous_chunks = previous_chunks
         self.bm25_index = self._build_bm25_index(self._chunks)
         self._build_vector_index(chunks)
 
@@ -22,20 +23,24 @@ class KnowledgeStore:
         return store
     
     def _build_vector_index(self, chunks: list[Chunk]):
-        chunk_list = [chunk.text for chunk in chunks]
-        metadatas = [chunk.metadata for chunk in chunks]
-        ids = [chunk.id for chunk in chunks]
+        response = requests.get(
+            url=f"{FASTAPI_URL}/vector_store_status"
+        )
+        if response.json()["code"] == 404 or self._previous_chunks is not None:
+            chunk_list = [chunk.text for chunk in chunks]
+            metadatas = [chunk.metadata for chunk in chunks]
+            ids = [chunk.id for chunk in chunks]
 
-        for i in range(0, len(chunk_list), 250):
-            end_idx = min(i + 250, len(chunk_list))    
-            requests.post(
-                url=f"{FASTAPI_URL}/vector_store",
-                json={
-                    "text": chunk_list[i:end_idx],
-                    "metadata": metadatas[i:end_idx],
-                    "id": ids[i:end_idx]
-                }
-            )
+            for i in range(0, len(chunk_list), 250):
+                end_idx = min(i + 250, len(chunk_list))    
+                requests.post(
+                    url=f"{FASTAPI_URL}/vector_store",
+                    json={
+                        "text": chunk_list[i:end_idx],
+                        "metadata": metadatas[i:end_idx],
+                        "id": ids[i:end_idx]
+                    }
+                )
     
     def bm25_search(self, query: str, top_k: int=10) -> list[SearchResult]:
         if top_k <= 0 or not self._chunks:
@@ -78,12 +83,13 @@ class KnowledgeStore:
         result = []
 
         for i, (doc, score) in enumerate(search_result):
+            print(doc)
             result.append(
                 SearchResult(
                     chunk=Chunk(
                         text=doc["page_content"],
-                        id=doc["metadata"]["id"],
-                        metadata=doc["metadata"]["metadata"]
+                        id=doc["id"],
+                        metadata=doc["metadata"]
                     ),
                     score=score,
                     rank=i + 1,

@@ -1,6 +1,7 @@
-from src.backend.graph import get_graph, Graph
+from src.backend.graph import Graph
 from src.backend.agents.llm import get_assistant
 from src.backend.agents.retriever import Retriever
+from src.backend.store.store import KnowledgeStore
 from logs.logging import chat_logging, result_logging
 from src.backend.core.schema import SearchResult, Chunk
 import streamlit as st
@@ -126,12 +127,11 @@ class Interface:
     def initialize(self):
         with st.sidebar:
             st.title("📚 Tài liệu bổ trợ")
-            st.write(st.session_state.has_retrieved)
             uploaded_files = st.file_uploader("Upload file", type=["pdf", "txt", "docx"], accept_multiple_files=True)
             if st.button("Nạp tài liệu"):
                 from src.backend.agents.chunker import chunk_structure_aware
                 from src.backend.processing import file_converter
-                from src.backend.store.store import KnowledgeStore
+                
                 
                 # embedder = get_embedder()
 
@@ -159,7 +159,7 @@ class Interface:
                         store = KnowledgeStore(
                             chunks=chunks
                         )
-
+                    st.session_state.store = store
                     store.save(KSTORE_DIR)
                     progress_bar.progress(100, text="Hoàn tất embedding!")
 
@@ -180,23 +180,29 @@ class Interface:
 
         st.markdown("### 🧮 UTC Teaching Assistant")
 
-        chat_history: list[dict[str, str]] = []
         for message in st.session_state.messages:
             st.html(render_chat(message["role"], message["content"]), unsafe_allow_javascript=True)
             
-        if "store" in st.query_params:
-            retriever = Retriever(st.query_params["store"])
-            assistant = Graph(
+        if "store" in st.session_state:
+            retriever = Retriever(st.session_state["store"])
+            self.assistant = Graph(
                 llm=get_assistant(selected_model),
                 retriever=retriever
             )
-            
-        else:
-            assistant = Graph(
-                llm=get_assistant(selected_model),
-                retriever=None
+        elif os.path.exists(KSTORE_DIR):
+            retriever = Retriever(
+                store=KnowledgeStore(chunks=_load_chunk())
             )
-
+            self.assistant = Graph(
+                llm=get_assistant(selected_model),
+                retriever=retriever
+            )  
+        else:
+            self.assistant = Graph(
+                llm=get_assistant(selected_model),
+            )
+    
+    def run(self):
         if query := st.chat_input("Bạn muốn hỏi gì..."):
             st.session_state.messages.append({"role": "user", "content": query})
             st.html(render_chat("user", query), unsafe_allow_javascript=True)
@@ -217,7 +223,7 @@ class Interface:
                 "response": ""
             }
 
-            result = assistant.app.invoke(initial_state)
+            result = self.assistant.app.invoke(initial_state)
             response = result["response"]
 
             for chunk in response.split(" "):

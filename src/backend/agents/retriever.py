@@ -4,6 +4,8 @@ import requests
 from src.backend.core.schema import SearchResult
 from src.backend.store.store import KnowledgeStore
 
+FASTAPI_URL = os.getenv("FASTAPI_URL")
+
 DEFAULT_RRF_K = int(os.getenv("DEFAULT_RRF_K"))
 DEFAULT_NAIVE_TOP_K = int(os.getenv("DEFAULT_NAIVE_TOP_K"))
 DEFAULT_HYBRID_TOP_K = int(os.getenv("DEFAULT_HYBRID_TOP_K"))
@@ -19,9 +21,15 @@ class Retriever:
     ) -> list[SearchResult]:
         bm25_results = self.store.bm25_search(query, DEFAULT_NAIVE_TOP_K)
         vector_results = self.store.vector_search(query, DEFAULT_NAIVE_TOP_K)
+        
         search_results = self._fusion(
             bm25_results=bm25_results,
             vector_results=vector_results
+        )
+
+        search_results = self._rerank(
+            query=query,
+            fusion_result=search_results
         )
 
         return search_results
@@ -40,9 +48,15 @@ class Retriever:
     
     def _rerank(
         self,
-        fusion_result: list[SearchResult]
+        query: str,
+        fusion_result: list[SearchResult],
+        top_k: int = DEFAULT_RERANK_TOP_K
     ) -> list[SearchResult]:
-        pass
+        return _rerank(
+            query=query,
+            fusion_result=fusion_result,
+            top_k=top_k    
+        )
 
 def _rrf(
         bm25_results: list[SearchResult],
@@ -92,4 +106,34 @@ def _rrf(
             method="fusion"
         )
         for i, (chunk, score) in enumerate(search_results)
+    ]
+
+def _rerank(
+    query:str,
+    fusion_result: list[SearchResult],
+    top_k: int
+) -> list[SearchResult]:
+    
+    contexts = [c.chunk.text for c in fusion_result]
+
+    response = requests.post(
+        url=f"{FASTAPI_URL}/rerank",
+        json={
+            "query": query,
+            "context": contexts
+        }
+    )
+
+    scores = response.json()["scores"]
+
+    top_idx = sorted(zip(fusion_result , scores), key=lambda x: x[1], reverse=True)[:top_k]
+
+    return [
+        SearchResult(
+            chunk=c.chunk,
+            score=score,
+            rank=i+1,
+            method="rerank"
+        )
+        for i, (c, score) in enumerate(top_idx)
     ]
